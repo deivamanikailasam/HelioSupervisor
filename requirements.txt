@@ -1,0 +1,16 @@
+# Pinned, available and compatible versions (LangChain 1.2.x stack).
+# To refresh: pip cache purge; pip install --no-cache-dir -r requirements.txt
+langchain==1.2.10
+langchain-community==0.3.31
+langchain-core==1.2.14
+langchain-openai==1.1.10
+langgraph==1.0.9
+streamlit==1.54.0
+pydantic>=2.7.4,<3
+certifi>=2024.2.2
+python-dotenv==1.0.1
+httpx==0.28.1
+requests>=2.32
+tiktoken>=0.7,<1
+langchain-google-genai>=2.0.0
+rich>=13.0.0
