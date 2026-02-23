@@ -13,10 +13,12 @@ if __name__ == "__main__" or __package__ is None:
 import streamlit as st
 
 try:
+    from . import __version__
     from .supervisor import run_supervisor
     from .config import config
     from . import rag
 except ImportError:
+    from app import __version__
     from app.supervisor import run_supervisor
     from app.config import config
     from app import rag
@@ -295,6 +297,9 @@ with st.sidebar:
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
+
+    st.divider()
+    st.caption(f"Helio Supervisor **v{__version__}**")
 
 # ----- Main area -----
 st.title("Helio Supervisor")

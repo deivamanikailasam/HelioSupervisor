@@ -1,5 +1,7 @@
 # Helio Supervisor
 
+**Version:** defined in [VERSION](VERSION) (used for app and GitHub release tags). See [CHANGELOG.md](CHANGELOG.md) for history.
+
 A **local hierarchical supervisor agent** for goal-oriented workflows. It plans tasks, fetches web content, runs code snippets, writes notes, and summarizes text—with optional **human-in-the-loop** approval and **self-critique** summaries.
 
 ---
@@ -8,11 +10,12 @@ A **local hierarchical supervisor agent** for goal-oriented workflows. It plans 
 
 - **Multi-provider LLM support**: OpenAI, Ollama (local), Google (Gemini), Perplexity
 - **Six built-in tools**: `plan_tasks`, `web_fetch`, `code_exec`, `write_note`, `summarize_text`, `rag_search`
-- **Optional RAG (local documents)**: In the Web UI, attach a document and/or select documents or folders from `memory/docs/`; RAG runs only for that run. If you do neither, RAG is not used.
+- **Optional RAG (local documents)**: In the Web UI, attach a document and/or select documents or folders from `memory/docs/`; RAG runs only for that run. **RAG mode toggle:** answer only from documents (offline) or use internet + documents. **Anti-hallucination:** answers are grounded in retrieved chunks; the agent says when something is not in the document(s).
 - **Optional human approval** for risky actions (code execution, web fetch, writing notes)
 - **Optional self-critique**: short summary of the agent’s answer after each turn
 - **Persistent conversation memory** (JSONL) and **notes** written to disk
 - **Two interfaces**: Streamlit web UI and Rich-based CLI
+- **Best-in-class RAG embeddings**: Default `BAAI/bge-base-en-v1.5` (set `RAG_EMBEDDING_MODEL` in `.env`). PDF extraction: pypdf then PyMuPDF. **Streamlit**: Chat history cap (40 messages), `.streamlit/config.toml`, "Tools used" shown for every reply.
 
 ---
 
@@ -90,8 +93,12 @@ HelioSupervisor/
 ├── scripts/
 │   └── reinstall.ps1  # Pip cache purge + reinstall from requirements.txt
 ├── docs/              # Detailed documentation
+├── .streamlit/
+│   └── config.toml    # Streamlit server/browser options (e.g. lower RAM)
 ├── .env               # Local config (not committed; copy from .env.example)
 ├── .env.example       # Example env template
+├── VERSION            # Single source of truth for version (app + GitHub release tags)
+├── CHANGELOG.md       # Version history and changes
 ├── requirements.txt
 └── README.md
 ```
@@ -129,7 +136,7 @@ HelioSupervisor/
 | `RAG_CHUNK_SIZE` | Chunk size for RAG | `800` |
 | `RAG_CHUNK_OVERLAP` | Chunk overlap for RAG | `100` |
 | `RAG_TOP_K` | Default top-k chunks returned by rag_search | `5` |
-| `RAG_EMBEDDING_MODEL` | Local embedding model (e.g. sentence-transformers/…) | `sentence-transformers/all-MiniLM-L6-v2` |
+| `RAG_EMBEDDING_MODEL` | RAG embedding model (default: BGE for best quality) | `BAAI/bge-base-en-v1.5` |
 | `RAG_EMBEDDING_DEVICE` | Device for embeddings (`cpu` or `cuda`) | `cpu` |
 | `RAG_ALLOWED_EXTENSIONS` | Allowed file types for RAG (comma-separated) | `md,txt,pdf` |
 | `RAG_NAIVE_CHUNK_MAX_CHARS` | Max chars per chunk in keyword fallback; `0` = chunk_size×2 | `0` |
@@ -149,7 +156,7 @@ HelioSupervisor/
 | **summarize_text** | Summarizes text with configurable max word count. |
 | **rag_search** | Searches selected/attached documents (in `memory/docs/`) for relevant chunks; only used when you attach a file or select documents/folders in the UI. |
 
-When **human approval** is enabled (default in UI: “Approve all actions” off), the agent will ask for confirmation before using `code_exec`, `web_fetch`, or `write_note`. **RAG** is opt-in per run: attach a document and/or select documents or folders in the "RAG for this run" expander; if you do neither, RAG is not used.
+When **human approval** is enabled (default in UI: “Approve all actions” off), the agent will ask for confirmation before using `code_exec`, `web_fetch`, or `write_note`. **RAG** is opt-in per run: attach a document and/or select documents or folders in the "RAG for this run" expander; use **"Answer only from documents (offline)"** to forbid web fetch. When RAG is used, the agent is instructed not to hallucinate.
 
 ---
 
@@ -173,6 +180,7 @@ When **human approval** is enabled (default in UI: “Approve all actions” off
 - **[docs/SETUP.md](docs/SETUP.md)** — Detailed setup (venv, dependencies, providers, troubleshooting).
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — All environment variables and behaviour options.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Data flow, modules, and design.
+- **[CHANGELOG.md](CHANGELOG.md)** — Version history and list of changes per release.
 
 ---
 

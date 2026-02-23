@@ -101,7 +101,7 @@ If the Streamlit UI uses too much RAM:
 
 - **Chat history cap:** The UI keeps only the last 40 messages in session state (`MAX_CHAT_HISTORY_MESSAGES` in `app/ui.py`). Use **Clear conversation** in the sidebar to free memory during long sessions.
 - **RAG:** Each run with RAG builds an in-memory FAISS index for the selected scope; it is cleared and garbage-collected after the run. To reduce peak RAM: attach or select fewer/smaller documents, or avoid using RAG when not needed.
-- **Embeddings:** The RAG embedding model (e.g. `all-MiniLM-L6-v2`) is loaded once and kept in memory. Use `RAG_EMBEDDING_DEVICE=cpu` in `.env` to avoid GPU memory; the default model is already relatively small.
+- **Embeddings:** The RAG embedding model (default `BAAI/bge-base-en-v1.5`) is loaded once and kept in memory. Use `RAG_EMBEDDING_DEVICE=cpu` in `.env` to avoid GPU memory; for a smaller model set `RAG_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2`.
 - **Streamlit config:** `.streamlit/config.toml` sets `headless = true`, `fastReruns = true`, and a 200 MB upload limit to reduce overhead.
 
 ---
