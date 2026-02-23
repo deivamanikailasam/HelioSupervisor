@@ -45,6 +45,15 @@ Set in `.env` (or in the Streamlit sidebar; sidebar values override `.env` for t
 | `CODE_EXEC_TIMEOUT` | int | `10` | Timeout in seconds for `code_exec` subprocess. |
 | `SUMMARIZE_MAX_WORDS` | int | `2000` | Default max words for the `summarize_text` tool. |
 | `SUMMARIZE_CRITIQUE_MAX_WORDS` | int | `2000` | Max words for the optional self-critique summary. |
+| `RAG_DOCS_DIR` | string | `memory/docs` | Path (relative to project root) where RAG documents are stored; uploads and selections use this. |
+| `RAG_INDEX_DIR` | string | `memory/rag_faiss` | Path (relative to project root) for persisted FAISS index (when using global index). |
+| `RAG_CHUNK_SIZE` | int | `800` | Character size for document chunks (RAG). |
+| `RAG_CHUNK_OVERLAP` | int | `100` | Overlap between consecutive chunks (RAG). |
+| `RAG_TOP_K` | int | `5` | Default number of top chunks returned by `rag_search`. |
+| `RAG_EMBEDDING_MODEL` | string | `BAAI/bge-base-en-v1.5` | Embedding model for RAG; BGE gives best retrieval quality. Use `sentence-transformers/all-MiniLM-L6-v2` for a smaller/faster model. |
+| `RAG_EMBEDDING_DEVICE` | string | `cpu` | Device for embedding model (e.g. `cpu`, `cuda`). |
+| `RAG_ALLOWED_EXTENSIONS` | string | `md,txt,pdf` | Comma-separated file extensions (without leading dot) for RAG documents. |
+| `RAG_NAIVE_CHUNK_MAX_CHARS` | int | `0` | Max characters per chunk in naive keyword fallback; `0` = use `RAG_CHUNK_SIZE * 2`. |
 
 ---
 
@@ -54,19 +63,50 @@ Configured in `app/config.py` (not overridable via env in the current version):
 
 - **Log directory:** `BASE_DIR / "logs"` — created at import; reserved for future logging.
 - **Memory directory:** `BASE_DIR / "memory"` — holds `conversations.jsonl` and agent-written `*.md` notes.
+- **RAG docs directory:** `BASE_DIR / "memory" / "docs"` — place `.md`, `.txt`, or `.pdf` files here for local RAG. The UI can attach files (saved here) and list documents/folders for selection. RAG runs only when the user attaches a file or selects documents/folders for that run; no global index is used in the UI flow (scoped in-memory index per run).
 
 `BASE_DIR` is the parent of the `app/` package (the repository root).
 
 ---
 
-## 5. Human-in-the-loop and self-critique
+## 5. RAG (opt-in per run)
+
+In the **Web UI**, RAG is used only when the user, before sending a message, does at least one of:
+
+- **Attach document(s):** Upload one or more `.md`, `.txt`, or `.pdf` files; they are saved to `memory/docs/` and used as the RAG scope for that run.
+- **Select documents:** Choose one or more files from the “Select documents from memory/docs/” multiselect (includes files in subfolders).
+- **Select folder(s):** Choose one or more folders (e.g. “(Root — all docs)” to use everything in `memory/docs/`); all documents inside are included in the scope.
+
+If none of these are done, RAG is not used for that run and the `rag_search` tool returns a message asking the user to attach or select documents. The CLI does not pass `rag_scope`, so RAG is not used when running from the CLI unless you extend it to accept scope.
+
+**RAG mode (Streamlit UI):**
+
+- **Answer only from documents (offline):** When this checkbox is on, the agent may not use `web_fetch`; it answers strictly from the selected documents. Use for document-only Q&A without internet.
+- **Off (default):** The agent can use both the selected documents and the internet (`web_fetch`) when answering.
+
+**Anti-hallucination:** When RAG is used, the agent is instructed to base answers only on the retrieved chunks, to say when something is not in the document(s), and not to invent content.
+
+---
+
+## 6. Human-in-the-loop and self-critique
 
 - **Human approval:** When enabled (default in the UI: “Approve all actions” unchecked), the supervisor will ask the user for explicit approval before using `code_exec`, `web_fetch`, or `write_note`. This is controlled by the UI checkbox and passed as `require_human_approval` to `run_supervisor()`; there is no env var for it.
 - **Self-critique:** When “Allow self-critique summary” is checked in the UI (or `include_critique=True` in the CLI), the app runs a summarization step after each response and stores it; length is capped by `SUMMARIZE_CRITIQUE_MAX_WORDS`.
 
 ---
 
-## 6. Example `.env` snippets
+## 7. Reducing memory usage (Streamlit)
+
+If the Streamlit UI uses too much RAM:
+
+- **Chat history cap:** The UI keeps only the last 40 messages in session state (`MAX_CHAT_HISTORY_MESSAGES` in `app/ui.py`). Use **Clear conversation** in the sidebar to free memory during long sessions.
+- **RAG:** Each run with RAG builds an in-memory FAISS index for the selected scope; it is cleared and garbage-collected after the run. To reduce peak RAM: attach or select fewer/smaller documents, or avoid using RAG when not needed.
+- **Embeddings:** The RAG embedding model (e.g. `all-MiniLM-L6-v2`) is loaded once and kept in memory. Use `RAG_EMBEDDING_DEVICE=cpu` in `.env` to avoid GPU memory; the default model is already relatively small.
+- **Streamlit config:** `.streamlit/config.toml` sets `headless = true`, `fastReruns = true`, and a 200 MB upload limit to reduce overhead.
+
+---
+
+## 8. Example `.env` snippets
 
 **OpenAI only:**
 
@@ -104,7 +144,7 @@ MEMORY_RECENT_TURNS=4
 
 ---
 
-## 7. Where configuration is read
+## 9. Where configuration is read
 
 - **`app/config.py`:** Loads `.env` once at import; defines `LLMConfig` and `AppConfig` dataclasses and the singleton `config`. All other modules use `from .config import config` (or `from app.config import config`).
 - **Streamlit UI:** Reads provider, model, temperature, and API keys from the sidebar and passes them to `run_supervisor()`; these override the defaults derived from `.env` for that session only.

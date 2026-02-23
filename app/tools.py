@@ -20,9 +20,11 @@ from .types import (
     CodeExecInput,
     NoteInput,
     SummarizeInput,
+    RagSearchInput,
 )
 from .config import config
 from .llm import get_base_llm
+from . import rag
 
 @tool("plan_tasks", args_schema=PlanTaskInput)
 def plan_tasks_tool(goal: str, max_steps: int | None = None) -> str:
@@ -118,3 +120,28 @@ def summarize_text_tool(text: str, max_words: int | None = None) -> str:
     )
     messages = [SystemMessage(content=system), HumanMessage(content=f"Max words: {input.max_words}\n\nTEXT:\n{input.text}")]
     return llm.invoke(messages).content
+
+
+@tool("rag_search", args_schema=RagSearchInput)
+def rag_search_tool(query: str, top_k: int | None = None) -> str:
+    """
+    Search local documents (Markdown/PDF/text in memory/docs/) for chunks relevant to the query.
+    Returns top-k matching text chunks. Use when the user asks about project docs or stored content.
+    Then use summarize_text or reason directly over the returned chunks to answer.
+    Only available when the user has attached a document, or selected documents/folders for this run.
+    """
+    input = RagSearchInput(query=query, top_k=top_k if top_k is not None else config.rag_top_k)
+    search_fn = rag.get_rag_search_fn()
+    if search_fn is None:
+        return (
+            "No documents selected for RAG. The user must attach a document, or select documents/folders "
+            "from memory/docs in the chat area before sending, for RAG to be used. Answer without RAG or ask them to select docs."
+        )
+    chunks = search_fn(input.query, input.top_k)
+    if not chunks:
+        return (
+            "No text could be extracted from the selected document(s), or they are empty. "
+            "If you selected a PDF, it may be image-only (scanned) or poorly encoded. "
+            "Suggest the user try: (1) a different PDF that has selectable text, or (2) install pymupdf (pip install pymupdf) for better extraction, or (3) add a .txt or .md version of the content."
+        )
+    return "\n\n---\n\n".join(f"[Chunk {i+1}]\n{c}" for i, c in enumerate(chunks))

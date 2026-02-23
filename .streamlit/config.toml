@@ -1,0 +1,16 @@
+# Streamlit config — reduce RAM and overhead where possible
+# https://docs.streamlit.io/develop/api-reference/configuration
+
+[server]
+# Avoid launching a browser (slightly lower memory)
+headless = true
+# Limit upload size to avoid huge in-memory files
+maxUploadSize = 200
+
+[browser]
+# Disable usage stats to reduce background work
+gatherUsageStats = false
+
+[runner]
+# Rerun only when needed (can reduce redundant script runs)
+fastReruns = true

@@ -57,6 +57,35 @@ class AppConfig:
     memory_recent_turns: int = field(
         default_factory=lambda: _env_int("MEMORY_RECENT_TURNS", 6)
     )
+    # RAG: local documents and index paths, limits, embedding (all from .env)
+    _rag_docs_subdir: str = field(default_factory=lambda: os.getenv("RAG_DOCS_DIR", "memory/docs"))
+    _rag_index_subdir: str = field(default_factory=lambda: os.getenv("RAG_INDEX_DIR", "memory/rag_faiss"))
+
+    @property
+    def docs_dir(self) -> Path:
+        return BASE_DIR / self._rag_docs_subdir
+
+    @property
+    def rag_index_dir(self) -> Path:
+        return BASE_DIR / self._rag_index_subdir
+
+    rag_chunk_size: int = field(default_factory=lambda: _env_int("RAG_CHUNK_SIZE", 800))
+    rag_chunk_overlap: int = field(default_factory=lambda: _env_int("RAG_CHUNK_OVERLAP", 100))
+    rag_top_k: int = field(default_factory=lambda: _env_int("RAG_TOP_K", 5))
+    rag_embedding_model: str = field(
+        default_factory=lambda: os.getenv("RAG_EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
+    )
+    rag_embedding_device: str = field(
+        default_factory=lambda: os.getenv("RAG_EMBEDDING_DEVICE", "cpu")
+    )
+    rag_allowed_extensions: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            f".{x.strip().lstrip('.')}" for x in os.getenv("RAG_ALLOWED_EXTENSIONS", "md,txt,pdf").split(",") if x.strip()
+        ) or (".md", ".txt", ".pdf")
+    )
+    rag_naive_chunk_max_chars: int = field(
+        default_factory=lambda: _env_int("RAG_NAIVE_CHUNK_MAX_CHARS", 0)
+    )  # 0 = use rag_chunk_size * 2
 
     @property
     def openai_api_key(self) -> str | None:

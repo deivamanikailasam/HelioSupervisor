@@ -7,7 +7,8 @@ A **local hierarchical supervisor agent** for goal-oriented workflows. It plans 
 ## Features
 
 - **Multi-provider LLM support**: OpenAI, Ollama (local), Google (Gemini), Perplexity
-- **Five built-in tools**: `plan_tasks`, `web_fetch`, `code_exec`, `write_note`, `summarize_text`
+- **Six built-in tools**: `plan_tasks`, `web_fetch`, `code_exec`, `write_note`, `summarize_text`, `rag_search`
+- **Optional RAG (local documents)**: In the Web UI, attach a document and/or select documents or folders from `memory/docs/`; RAG runs only for that run. If you do neither, RAG is not used.
 - **Optional human approval** for risky actions (code execution, web fetch, writing notes)
 - **Optional self-critique**: short summary of the agent’s answer after each turn
 - **Persistent conversation memory** (JSONL) and **notes** written to disk
@@ -74,15 +75,17 @@ Type your goal or task; type `exit` or `quit` to leave the CLI.
 ```
 HelioSupervisor/
 ├── app/
-│   ├── config.py      # Env-based config (paths, limits, API key props)
+│   ├── config.py      # Env-based config (paths, limits, API keys, RAG)
 │   ├── types.py       # Pydantic schemas for tool inputs
 │   ├── llm.py         # LLM factory (OpenAI, Ollama, Google, Perplexity)
 │   ├── memory.py      # Conversation persistence (conversations.jsonl)
-│   ├── tools.py       # LangChain tools (plan, fetch, code_exec, note, summarize)
+│   ├── rag.py         # RAG: scoped search over memory/docs/ (FAISS + local embeddings)
+│   ├── tools.py       # LangChain tools (plan, fetch, code_exec, note, summarize, rag_search)
 │   ├── supervisor.py  # Supervisor agent graph and run_supervisor()
-│   ├── ui.py          # Streamlit web UI
+│   ├── ui.py          # Streamlit web UI (attach/select docs for RAG)
 │   └── cli.py         # Rich CLI loop
 ├── memory/            # Runtime: conversations.jsonl + agent-written *.md notes
+│   └── docs/          # RAG documents (.md, .txt, .pdf); UI uploads saved here
 ├── logs/              # Created at startup (for future use)
 ├── scripts/
 │   └── reinstall.ps1  # Pip cache purge + reinstall from requirements.txt
@@ -120,6 +123,16 @@ HelioSupervisor/
 | `CODE_EXEC_TIMEOUT` | Timeout (seconds) for code_exec | `10` |
 | `SUMMARIZE_MAX_WORDS` | Max words for summarize_text | `2000` |
 | `SUMMARIZE_CRITIQUE_MAX_WORDS` | Max words for self-critique | `2000` |
+| **RAG** | | |
+| `RAG_DOCS_DIR` | Path to RAG documents (relative to project root) | `memory/docs` |
+| `RAG_INDEX_DIR` | Path for FAISS index (relative to project root) | `memory/rag_faiss` |
+| `RAG_CHUNK_SIZE` | Chunk size for RAG | `800` |
+| `RAG_CHUNK_OVERLAP` | Chunk overlap for RAG | `100` |
+| `RAG_TOP_K` | Default top-k chunks returned by rag_search | `5` |
+| `RAG_EMBEDDING_MODEL` | Local embedding model (e.g. sentence-transformers/…) | `sentence-transformers/all-MiniLM-L6-v2` |
+| `RAG_EMBEDDING_DEVICE` | Device for embeddings (`cpu` or `cuda`) | `cpu` |
+| `RAG_ALLOWED_EXTENSIONS` | Allowed file types for RAG (comma-separated) | `md,txt,pdf` |
+| `RAG_NAIVE_CHUNK_MAX_CHARS` | Max chars per chunk in keyword fallback; `0` = chunk_size×2 | `0` |
 
 **Note:** In the Streamlit UI, API keys entered in the sidebar override `.env` for that session.
 
@@ -134,8 +147,9 @@ HelioSupervisor/
 | **code_exec** | Runs short Python snippets in a subprocess; use `print()` for output. |
 | **write_note** | Writes a note to `memory/<title>.md`. |
 | **summarize_text** | Summarizes text with configurable max word count. |
+| **rag_search** | Searches selected/attached documents (in `memory/docs/`) for relevant chunks; only used when you attach a file or select documents/folders in the UI. |
 
-When **human approval** is enabled (default in UI: “Approve all actions” off), the agent will ask for confirmation before using `code_exec`, `web_fetch`, or `write_note`.
+When **human approval** is enabled (default in UI: “Approve all actions” off), the agent will ask for confirmation before using `code_exec`, `web_fetch`, or `write_note`. **RAG** is opt-in per run: attach a document and/or select documents or folders in the "RAG for this run" expander; if you do neither, RAG is not used.
 
 ---
 
@@ -143,6 +157,7 @@ When **human approval** is enabled (default in UI: “Approve all actions” off
 
 - **Conversations**: Appended to `memory/conversations.jsonl` (role, content, timestamp).
 - **Notes**: Created by the agent in `memory/*.md` via `write_note`.
+- **RAG documents**: Stored in `memory/docs/` (path configurable via `RAG_DOCS_DIR`). In the Web UI you can attach files (saved there), or select existing documents/folders; RAG runs only when at least one is chosen for that run.
 - **Context**: The supervisor loads the last `MEMORY_RECENT_TURNS` turns from disk and merges with the current chat when using the UI.
 
 ---

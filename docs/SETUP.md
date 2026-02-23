@@ -45,6 +45,8 @@ pip install -r requirements.txt
 
 This installs the LangChain 1.2 stack, Streamlit, Rich, `langchain-google-genai`, and supporting packages.
 
+**RAG (local documents):** For the `rag_search` tool, the stack includes `faiss-cpu`, `sentence-transformers`, `pypdf`, and `langchain-text-splitters`. In the **Web UI**, RAG is opt-in per run: before sending a message, attach a document (saved to `memory/docs/`), and/or select documents or folders from the “RAG for this run” expander. If you do none of these, RAG is not used for that run. When scope is set, a scoped in-memory index is built from the selected paths. You can also add `.md`, `.txt`, or `.pdf` files directly under `memory/docs/` (including subfolders) and select them in the UI. If RAG dependencies are missing, the tool falls back to simple keyword matching over the selected docs.
+
 ### Clean reinstall (PowerShell)
 
 To purge the pip cache and reinstall from `requirements.txt`:

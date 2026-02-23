@@ -15,9 +15,14 @@ import streamlit as st
 try:
     from .supervisor import run_supervisor
     from .config import config
+    from . import rag
 except ImportError:
     from app.supervisor import run_supervisor
     from app.config import config
+    from app import rag
+
+# Limit in-session chat history to control RAM (Streamlit holds full list in session state)
+MAX_CHAT_HISTORY_MESSAGES = 40
 
 # Provider and model options (defaults from .env)
 PROVIDERS = ["ollama", "openai", "google", "perplexity"]
@@ -105,8 +110,9 @@ def _render_chat_row(role: str, content: str, tools_used: list | None = None, se
     with col_msg:
         st.markdown('<div class="helio-bubble">', unsafe_allow_html=True)
         st.markdown(content)
-        if role == "assistant" and tools_used:
-            st.caption(f"Tools used: {', '.join(tools_used)}")
+        if role == "assistant":
+            tools_label = ", ".join(tools_used) if tools_used else "(none)"
+            st.caption(f"Tools used: {tools_label}")
         if role == "assistant" and show_critique and self_critique:
             with st.expander("Self-critique / summary"):
                 st.markdown(self_critique)
@@ -189,6 +195,14 @@ st.markdown("""
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history: List[Dict[str, Any]] = []
+if "rag_attached_paths" not in st.session_state:
+    st.session_state.rag_attached_paths: List[str] = []
+if "rag_selected_docs" not in st.session_state:
+    st.session_state.rag_selected_docs: List[str] = []
+if "rag_selected_folders" not in st.session_state:
+    st.session_state.rag_selected_folders: List[str] = []
+if "rag_saved_upload_names" not in st.session_state:
+    st.session_state.rag_saved_upload_names: set[str] = set()
 
 # ----- Sidebar: settings and global toggles -----
 with st.sidebar:
@@ -276,7 +290,8 @@ with st.sidebar:
     )
 
     st.divider()
-    st.caption("Tools: plan_tasks, web_fetch, code_exec, write_note, summarize_text")
+    st.caption("Tools: plan_tasks, web_fetch, code_exec, write_note, summarize_text, rag_search")
+    st.caption("RAG runs only when you attach a file or select docs/folders in the chat area.")
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
@@ -287,6 +302,66 @@ st.markdown(
     f'<p class="app-caption">Local hierarchical supervisor ({selected_provider.capitalize()}). Plan, fetch, run code, write notes — with optional self-critique and human-in-the-loop.</p>',
     unsafe_allow_html=True,
 )
+
+# ----- RAG: attach docs, select docs/folders (opt-in per run) -----
+with st.expander("RAG for this run — attach or select documents", expanded=False):
+    st.caption("If you do none of these, RAG will not be used. Attached files are saved to memory/docs/.")
+    rag_documents_only = st.checkbox(
+        "Answer only from documents (offline)",
+        value=False,
+        key="rag_documents_only",
+        help="When on: agent uses only the selected documents (no web_fetch). When off: agent can use internet + documents.",
+    )
+    uploaded = st.file_uploader(
+        "Attach document (.md, .txt, .pdf)",
+        type=["md", "txt", "pdf"],
+        accept_multiple_files=True,
+        key="rag_uploader",
+        help="Uploaded files are saved to memory/docs/ and used only for this run.",
+    )
+    if uploaded:
+        for f in uploaded:
+            if f is not None and f.name and f.name not in st.session_state.rag_saved_upload_names:
+                try:
+                    rel = rag.save_uploaded_to_docs(f.getvalue(), f.name)
+                    st.session_state.rag_saved_upload_names.add(f.name)
+                    if rel not in st.session_state.rag_attached_paths:
+                        st.session_state.rag_attached_paths.append(rel)
+                except Exception as e:
+                    st.warning(f"Could not save {f.name}: {e}")
+        if st.session_state.rag_attached_paths:
+            st.caption(f"Attached: {', '.join(st.session_state.rag_attached_paths)}")
+
+    doc_folders = rag.list_docs_and_folders()
+    file_options = [x["path"] for x in doc_folders["files"]]
+    folder_options = [x["path"] for x in doc_folders["folders"]]
+
+    if file_options:
+        selected_docs = st.multiselect(
+            "Select documents from memory/docs/",
+            options=file_options,
+            default=st.session_state.rag_selected_docs,
+            key="rag_docs_select",
+            help="RAG will search only these documents for this run.",
+        )
+        st.session_state.rag_selected_docs = selected_docs
+    else:
+        st.caption("No .md / .txt / .pdf files in memory/docs/ yet.")
+        st.session_state.rag_selected_docs = []
+
+    if folder_options:
+        folder_display = {x["path"]: x["name"] for x in doc_folders["folders"]}
+        selected_folders = st.multiselect(
+            "Select folder(s) — use all docs inside",
+            options=folder_options,
+            default=st.session_state.rag_selected_folders,
+            format_func=lambda p: folder_display.get(p, p),
+            key="rag_folders_select",
+            help="RAG will use every document inside the selected folders.",
+        )
+        st.session_state.rag_selected_folders = selected_folders
+    else:
+        st.session_state.rag_selected_folders = []
 
 user_input = st.chat_input("Describe your goal or task...")
 
@@ -303,7 +378,18 @@ with chat_container:
 
 if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
+    if len(st.session_state.chat_history) > MAX_CHAT_HISTORY_MESSAGES:
+        st.session_state.chat_history = st.session_state.chat_history[-MAX_CHAT_HISTORY_MESSAGES:]
     _render_chat_row(role="user", content=user_input, tools_used=None, self_critique=None, show_critique=False)
+
+    # RAG scope: attached + selected docs + all files in selected folders
+    rag_scope: List[str] = list(st.session_state.rag_attached_paths)
+    rag_scope.extend(st.session_state.rag_selected_docs)
+    if st.session_state.rag_selected_folders:
+        rag_scope.extend(rag.expand_rag_scope(st.session_state.rag_selected_folders))
+    rag_scope = sorted(set(rag_scope)) if rag_scope else None
+    if not rag_scope:
+        rag_scope = None
 
     result = run_supervisor(
         user_input,
@@ -316,6 +402,8 @@ if user_input:
         llm_provider=selected_provider,
         llm_model=selected_model,
         api_keys=api_keys,
+        rag_scope=rag_scope,
+        rag_documents_only=rag_documents_only,
     )
 
     output = result["output"]
@@ -338,3 +426,8 @@ if user_input:
         show_critique=show_hitl_hints,
     )
     st.session_state.chat_history.append(assistant_entry)
+    if len(st.session_state.chat_history) > MAX_CHAT_HISTORY_MESSAGES:
+        st.session_state.chat_history = st.session_state.chat_history[-MAX_CHAT_HISTORY_MESSAGES:]
+    # Clear attached paths and saved names so next run doesn't reuse them unless user re-uploads or selects them
+    st.session_state.rag_attached_paths = []
+    st.session_state.rag_saved_upload_names = set()

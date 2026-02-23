@@ -4,6 +4,7 @@ langchain==1.2.10
 langchain-community==0.3.31
 langchain-core==1.2.14
 langchain-openai==1.1.10
+langchain-text-splitters>=0.3.0
 langgraph==1.0.9
 streamlit==1.54.0
 pydantic>=2.7.4,<3
@@ -14,3 +15,9 @@ requests>=2.32
 tiktoken>=0.7,<1
 langchain-google-genai>=2.0.0
 rich>=13.0.0
+# RAG: local docs in memory/docs/, FAISS + HuggingFace embeddings (offline)
+faiss-cpu>=1.9.0
+sentence-transformers>=3.0.0
+pypdf>=5.0.0
+# Optional but recommended for PDF RAG: better text extraction when pypdf returns empty (e.g. web/Medium PDFs)
+pymupdf>=1.24.0

@@ -30,3 +30,11 @@ class SummarizeInput(BaseModel):
         default_factory=lambda: config.summarize_max_words,
         description="Rough max words for summary.",
     )
+
+
+class RagSearchInput(BaseModel):
+    query: str = Field(..., description="Search query to find relevant document chunks.")
+    top_k: int = Field(
+        default_factory=lambda: config.rag_top_k,
+        description="Number of top chunks to return (default from config).",
+    )

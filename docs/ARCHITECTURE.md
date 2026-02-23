@@ -24,9 +24,10 @@ Helio Supervisor is a **hierarchical agent** that uses a single LLM with tools t
 | **types.py** | Pydantic models for tool arguments: `PlanTaskInput`, `WebFetchInput`, `CodeExecInput`, `NoteInput`, `SummarizeInput`. |
 | **llm.py** | Builds the chat LLM by provider (OpenAI, Ollama, Google, Perplexity). Supports UI-supplied API keys via a context variable; when set, env keys are not used. |
 | **memory.py** | `MemoryStore`: appends conversation turns to `memory/conversations.jsonl` and loads recent turns for context. |
-| **tools.py** | LangChain `@tool` implementations: `plan_tasks`, `web_fetch`, `code_exec`, `write_note`, `summarize_text`. All use `get_base_llm()` so they respect the current provider and API keys. |
-| **supervisor.py** | Builds the supervisor system prompt and tool list; creates the agent graph with `create_agent()`; implements `run_supervisor()` (history loading, invoke, memory append, optional self-critique). |
-| **ui.py** | Streamlit app: sidebar (provider, model, temperature, API keys, approval/critique toggles), chat input, and chat history with custom styling. |
+| **tools.py** | LangChain `@tool` implementations: `plan_tasks`, `web_fetch`, `code_exec`, `write_note`, `summarize_text`, `rag_search`. All use `get_base_llm()` so they respect the current provider and API keys. |
+| **rag.py** | Minimal RAG: loads Markdown/PDF/text from `memory/docs/`, chunks with `RecursiveCharacterTextSplitter`, indexes with FAISS + HuggingFace embeddings (local). **RAG is opt-in per run:** the UI passes `rag_scope` (attached file paths + selected documents + selected folders) to `run_supervisor()`; when `rag_scope` is set, a scoped in-memory index is built and `rag_search` uses it; when not set, RAG is not used. Exposes `list_docs_and_folders()`, `save_uploaded_to_docs()`, `expand_rag_scope()`, `set_rag_scope()` / `get_rag_search_fn()`. |
+| **supervisor.py** | Builds the supervisor system prompt and tool list; creates the agent graph with `create_agent()`; implements `run_supervisor()` (history loading, invoke, memory append, optional self-critique). Accepts `rag_scope` (list of paths under `memory/docs/`); sets RAG context for the run so `rag_search` runs only over those docs or returns a “no documents selected” message. |
+| **ui.py** | Streamlit app: sidebar (provider, model, temperature, API keys, approval/critique toggles); **RAG for this run** expander with file upload (saved to `memory/docs/`), multiselect for documents and for folders from `memory/docs/`; chat input and chat history with custom styling. |
 | **cli.py** | Rich-based loop: prompt user, call `run_supervisor()`, print tools used and Markdown output; “exit”/“quit” to stop. |
 
 ---
@@ -34,7 +35,7 @@ Helio Supervisor is a **hierarchical agent** that uses a single LLM with tools t
 ## 3. Data flow
 
 1. **User input** is submitted via the Streamlit UI or the CLI.
-2. **UI or CLI** calls `run_supervisor(user_input, chat_history=..., api_keys=..., include_critique=..., require_human_approval=...)`.
+2. **UI or CLI** calls `run_supervisor(user_input, chat_history=..., api_keys=..., include_critique=..., require_human_approval=..., rag_scope=...)`. The UI builds `rag_scope` from attached files (saved to `memory/docs/`), selected documents, and expanded selected folders; if none are set, `rag_scope` is `None` and RAG is not used for that run.
 3. **run_supervisor** (in `supervisor.py`):
    - Optionally sets a context variable for API keys and temporarily removes API key env vars so tools use only the provided keys.
    - Loads recent turns from `memory_store` (from `conversations.jsonl`) and merges with any in-memory `chat_history` (e.g. from the UI).
@@ -55,6 +56,7 @@ Helio Supervisor is a **hierarchical agent** that uses a single LLM with tools t
 
 - **Conversations:** Every user and assistant message (and optional self-critique block) is appended to `memory/conversations.jsonl` as one JSON object per line (role, content, timestamp).
 - **Notes:** The `write_note` tool writes files to `memory/<safe_title>.md`.
+- **RAG documents:** Place Markdown (`.md`), text (`.txt`), or PDF (`.pdf`) files in `memory/docs/` (or upload via the UI; uploads are saved there). **RAG is opt-in per run:** the user must either attach a document, select one or more documents from a dropdown, or select one or more folders (including “Root — all docs”) in the chat-area expander before sending. For that run, a scoped in-memory FAISS index is built from the selected paths and `rag_search` uses it. If the user does none of these, RAG is not used and `rag_search` returns a “no documents selected” message.
 - **Logs:** The `logs/` directory is created by config; no application code currently writes log files there (reserved for future use).
 
 ---
@@ -64,7 +66,7 @@ Helio Supervisor is a **hierarchical agent** that uses a single LLM with tools t
 The supervisor is a single **LangChain 1.2 agent** (created with `create_agent`) that has:
 
 - A **system prompt** (from `get_supervisor_system_prompt(require_human_approval)`): describes the role, tool use, and whether to ask for approval before risky actions.
-- **Tools** from `get_supervisor_tools()`: `plan_tasks_tool`, `web_fetch_tool`, `code_exec_tool`, `write_note_tool`, `summarize_text_tool`.
+- **Tools** from `get_supervisor_tools()`: `plan_tasks_tool`, `web_fetch_tool`, `code_exec_tool`, `write_note_tool`, `summarize_text_tool`, `rag_search_tool`.
 
 The same LLM instance (from `get_base_llm()`) is used for the agent and for tool-internal LLM calls (e.g. `plan_tasks`, `summarize_text`), so provider and API keys stay consistent.
 
